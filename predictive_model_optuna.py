@@ -596,6 +596,48 @@ print(
 
 
 # ============================================================
+# Preprocessing so you can use in your predictions 
+# ============================================================
+
+import joblib 
+
+membrane_columns = membrane_ohe.columns.tolist()
+solvent_columns = solvent_ohe.columns.tolist()
+
+x_d_columns = (
+    [
+        "pressure (bar)",
+        "MW",
+        "Permeances (LMH/Bar)",
+    ]
+    + [f"membrane__{column}" for column in membrane_columns]
+    + [f"solvent__{column}" for column in solvent_columns]
+)
+
+preprocessing = {
+    "x_ds_scaler": x_ds_scaler,
+    "membrane_columns": membrane_columns,
+    "solvent_columns": solvent_columns,
+    "x_d_columns": x_d_columns,
+    "smiles_column": smiles_columns,
+}
+
+import os
+
+output_dir = "/ibex/user/baderl/projects/PBI_project/part_2/ray_results"
+os.makedirs(output_dir, exist_ok=True)
+
+preprocessing_path = os.path.join(
+    output_dir,
+    "pbi_preprocessing.joblib",
+)
+
+joblib.dump(preprocessing, preprocessing_path)
+
+print("\nPreprocessing saved at:")
+print(preprocessing_path)
+print("File exists:", os.path.exists(preprocessing_path))
+# ============================================================
 # 16. TEST THE FINAL MODEL
 # ============================================================
 
