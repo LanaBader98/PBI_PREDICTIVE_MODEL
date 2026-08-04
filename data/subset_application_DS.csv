@@ -1,9 +1,9 @@
-SMILES,Category
-Cc1ccc(S(=O)(=O)n2c(C3=CCN(C(=O)OC(C)(C)C)CC3)cc3c(Br)ccnc32)cc1.O=CN(C)C,Application_ds
-O=C(NC1=CC=C(Cl)C(Cl)=C1)C(=C)C.CC(C)=O,Application_ds
-CCOP(=O)(OCC)C(F)(F)c1ccc(CBr)cc1Br.CO,Application_ds
-O=C(CC(=C)C(C)C)C(C)CCCC1(OCC(=CCO)CCC1O)C.N#CC,Application_ds
-O=C(OC1C2=CC=3OCOC3C(OC)=C2C=4C(OC)=C(OC)C(OC)=CC4CC(C)C1(O)C)C=5C=CC=CC5.CO,Application_ds
+SMILES,Category,
+Cc1ccc(S(=O)(=O)n2c(C3=CCN(C(=O)OC(C)(C)C)CC3)cc3c(Br)ccnc32)cc1.O=CN(C)C,Application_ds,
+O=C(NC1=CC=C(Cl)C(Cl)=C1)C(=C)C.CC(C)=O,Application_ds,
+CCOP(=O)(OCC)C(F)(F)c1ccc(CBr)cc1Br.CO,Application_ds,
+O=C(CC(=C)C(C)C)C(C)CCCC1(OCC(=CCO)CCC1O)C.N#CC,Application_ds,
+O=C(OC1C2=CC=3OCOC3C(OC)=C2C=4C(OC)=C(OC)C(OC)=CC4CC(C)C1(O)C)C=5C=CC=CC5.CO,Application_ds,
 Oc1ccc2[nH]ncc2c1.CC(C)=O,Application_ds
 O=C(O)C(NC)CC1=CNC2=CC=CC(=C21)CC=C(C)C.CC1=CC=CC=C1,Application_ds
 S=C(NC=1C=CC=CC1)NN(C=2C=CC=CC2)C.CO,Application_ds

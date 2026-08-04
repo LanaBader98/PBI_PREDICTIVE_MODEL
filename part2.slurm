@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --gpus=1
-#SBATCH --output=logs/part2_out.log
-#SBATCH --error=logs/part2_error.log
+#SBATCH --output=logs/predicting_application_dataset_out.log
+#SBATCH --error=logs/predicting_application_dataset_error.log
 
 module purge
 source /ibex/user/baderl/miniforge/bin/activate
@@ -15,4 +15,4 @@ export PYTHONPATH=/ibex/user/baderl/projects/PBI_project:$PYTHONPATH
 
 cd /ibex/user/baderl/projects/PBI_project/part_2
 
-python predictive_model.py
+python predicting_application_dataset.py
