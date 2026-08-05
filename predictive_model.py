@@ -1,20 +1,14 @@
-# transfer learning from the checkpoint of the nf10k 
-# if the model has good accuracy then I am going predict the rejections of the solutes in the application dataset in
-# different types of membranes. 
-
 import pandas as pd
-from lightning import pytorch as pl
-from lightning.pytorch.callbacks import ModelCheckpoint
-
-from chemprop import data, featurizers, models, nn, utils
-from chemprop.models import multi
 import numpy as np
 import torch
 import random
-from sklearn.model_selection import train_test_split
 import os
 import matplotlib.pyplot as plt
-
+from lightning import pytorch as pl
+from lightning.pytorch.callbacks import ModelCheckpoint
+from chemprop import data, featurizers, models, nn, utils
+from chemprop.models import multi
+from sklearn.model_selection import train_test_split
 
 # I am just thinking shall I look at the kfolds wdyt 
 seed = 42 
@@ -34,8 +28,8 @@ torch.backends.cudnn.benchmark = False
 #--------------------------------------------
 
 agg = nn.NormAggregation()
+# Best NF10K model
 checkpoint_path = '/ibex/user/baderl/projects/PBI_project/AI_PBI_Project/OSN_NO_PBI/pretraining_OSN_model/ray_results/TorchTrainer_2025-12-30_15-36-00/6a164f09/checkpoint_000009/checkpoint.ckpt'  # best config 4.
-
 OSN_mp = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
 mp_hparams = OSN_mp['hyper_parameters']['message_passing'].copy()
 if 'cls' in mp_hparams:

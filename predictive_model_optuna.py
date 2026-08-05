@@ -1,36 +1,18 @@
-# transfer learning from the checkpoint of the nf10k 
-# predict rejections 
-# if the model has good accuracy then I am going predict the rejections of the solutes in the application dataset in
-# different types of membranes. 
-
 import pandas as pd
 from lightning import pytorch as pl
 from pathlib import Path
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+
 
 from chemprop import data, featurizers, models, nn, utils
-from chemprop.nn import metrics
-from chemprop.models import multi
 import numpy as np
-from torch.utils.data import DataLoader
-import seaborn as sns
-
 import matplotlib.pyplot as plt
-import csv 
-
-from sklearn.preprocessing import StandardScaler
 import torch
 import random
-from sklearn.model_selection import train_test_split
 import os
 
-from rdkit import Chem
-from rdkit.Chem import Draw, rdDepictor
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from sklearn.metrics import mean_absolute_error, r2_score
 
-import matplotlib.pyplot as plt
-
-from pathlib import Path
 import ray
 from ray import tune
 from ray.train import CheckpointConfig, RunConfig, ScalingConfig
@@ -38,11 +20,7 @@ from ray.train.lightning import (RayDDPStrategy, RayLightningEnvironment,
                                  RayTrainReportCallback, prepare_trainer)
 from ray.train.torch import TorchTrainer
 from ray.tune.search.hyperopt import HyperOptSearch
-from ray.tune.search.optuna import OptunaSearch
 from ray.tune.schedulers import FIFOScheduler
-
-from lightning import pytorch as pl
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
 seed = 42 
 
@@ -60,7 +38,7 @@ torch.backends.cudnn.benchmark = False
 # Load message passing because I am freezing the backbone
 #--------------------------------------------
 
-agg = nn.NormAggregation()
+# agg = nn.NormAggregation()
 checkpoint_path = '/ibex/user/baderl/projects/PBI_project/AI_PBI_Project/OSN_NO_PBI/pretraining_OSN_model/ray_results/TorchTrainer_2025-12-30_15-36-00/6a164f09/checkpoint_000009/checkpoint.ckpt'  # best config 4.
 
 OSN_mp = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
@@ -72,8 +50,6 @@ mp = nn.BondMessagePassing(**mp_hparams)
 state_dict = OSN_mp['state_dict']
 mp_state_dict = {k.replace('message_passing.', ''): v for k, v in state_dict.items() if k.startswith('message_passing.')}
 mp.load_state_dict(mp_state_dict)
-
-print(mp)
 
 #--------------------------------------------
 # Load PBI data
@@ -108,18 +84,13 @@ mols = [utils.make_mol(smi, keep_h=False, add_h=False) for smi in smis]
 datapoints = [data.MoleculeDatapoint(mol, y, x_d=X_d) for mol, y, X_d in zip(mols, ys, x_ds)]
 
 #--------------------------------------------
-# Data splitting 
+# Data splitting, Data loaders and scaling
 #--------------------------------------------
 
 mols = [d.mol for d in datapoints]  # RDkit Mol objects are use for structure based splits
 train_indices, val_indices, test_indices = data.make_split_indices(mols, "random", (0.8, 0.1, 0.1))
 train_data, val_data, test_data = data.split_data_by_indices(
-    datapoints, train_indices, val_indices, test_indices
-)
-
-#--------------------------------------------
-# Data loaders and scaling  
-#--------------------------------------------
+    datapoints, train_indices, val_indices, test_indices)
 
 featurizer = featurizers.SimpleMoleculeMolGraphFeaturizer()
 train_dset = data.MoleculeDataset(train_data[0], featurizer)
@@ -133,22 +104,12 @@ val_dset.normalize_inputs("X_d", x_ds_scaler)
 test_dset = data.MoleculeDataset(test_data[0], featurizer)
 test_dset.normalize_inputs("X_d", x_ds_scaler)
 
-train_loader = data.build_dataloader(train_dset, num_workers=num_workers)
-val_loader = data.build_dataloader(val_dset, num_workers=num_workers, shuffle=False)
-test_loader = data.build_dataloader(test_dset, num_workers=num_workers, shuffle=False)
-
 #--------------------------------------------
 # Trying Raytune here for hyperparameter optimization  
 #--------------------------------------------
 
 RAY_RESULTS_DIR = Path(
-    "/ibex/user/baderl/projects/PBI_project/part_2/ray_results"
-)
-
-RAY_RESULTS_DIR.mkdir(
-    parents=True,
-    exist_ok=True,
-)
+    "/ibex/user/baderl/projects/PBI_project/part_2/ray_results")
 
 NUM_TRIALS = 1
 SEED = 42
@@ -169,51 +130,27 @@ def build_transfer_model(
     mp_hparams,
     mp_state_dict,
     scaler,
-    x_d_dim,
-):
+    x_d_dim):
 
     mp = nn.BondMessagePassing(
-        **mp_hparams
-    )
-
-    # Load the pretrained NF-10K message-passing weights
+        **mp_hparams)
     mp.load_state_dict(
-        mp_state_dict
-    )
+        mp_state_dict)
 
-    # Freeze all message-passing parameters
     for parameter in mp.parameters():
         parameter.requires_grad = False
-
     mp.eval()
-
-    # --------------------------------------------------------
-    # Aggregation layer
-    # --------------------------------------------------------
-
     agg = nn.NormAggregation()
 
     # Size of molecular representation produced by the MPNN
     message_hidden_dim = int(
         mp_hparams["d_h"]
     )
-
-    # The FFN receives:
-    # molecular representation + PBI X_d features
     ffn_input_dim = (
-        message_hidden_dim + x_d_dim
-    )
-
-    # --------------------------------------------------------
-    # Convert model outputs back to the original PBI target
-    # units using the PBI training scaler
-    # --------------------------------------------------------
+        message_hidden_dim + x_d_dim)
 
     output_transform = (
-        nn.UnscaleTransform.from_standard_scaler(
-            scaler
-        )
-    )
+        nn.UnscaleTransform.from_standard_scaler(scaler))
 
     # --------------------------------------------------------
     # Build a new PBI-specific FFN using Ray's hyperparameters
@@ -230,41 +167,27 @@ def build_transfer_model(
         dropout=float(
             config["dropout"]
         ),
-        output_transform=output_transform,
-    )
+        output_transform=output_transform)
 
     batch_norm = True
 
     metric_list = [
         nn.metrics.RMSE(),
         nn.metrics.MAE(),
+        nn.metrics.MSE(),
+        nn.metrics.R2Score(),
     ]
 
-    model = models.MPNN(
-        mp,
-        agg,
-        ffn,
-        batch_norm,
-        metric_list,
-    )
-
-    # Apply trial-specific learning rates
+    model = models.MPNN(mp, agg, ffn, batch_norm, metric_list)
     model.init_lr = float(
-        config["init_lr"]
-    )
-
+        config["init_lr"])
     model.max_lr = float(
-        config["max_lr"]
-    )
-
+        config["max_lr"])
     model.final_lr = float(
-        config["final_lr"]
-    )
-
+        config["final_lr"])
     model.warmup_epochs = int(
-        config["warmup_epochs"]
-    )
-
+        config["warmup_epochs"])
+    
     return model
 
 
@@ -440,51 +363,32 @@ results = tuner.fit()
 result_df = results.get_dataframe()
 result_df
 
-best_result = results.get_best_result()
-best_config = best_result.config
-best_config
-
-ray.shutdown()
-
-
 # ============================================================
 # 12. GET THE BEST RESULT
 # ============================================================
 
 best_result = results.get_best_result(
     metric="val_loss",
-    mode="min",
-)
+    mode="min")
 
 best_config = best_result.config
 best_checkpoint = best_result.checkpoint
 
 print("\nBest validation loss:")
-print(
-    best_result.metrics["val_loss"]
-)
-
+print(best_result.metrics["val_loss"])
 print("\nBest hyperparameters:")
 
 for parameter_name, parameter_value in best_config.items():
-    print(
-        f"{parameter_name}: {parameter_value}"
-    )
+    print(f"{parameter_name}: {parameter_value}")
 
 print("\nBest Ray checkpoint:")
 print(best_checkpoint)
-
 
 # ============================================================
 # 13. SAVE ALL RAY RESULTS
 # ============================================================
 
 ray_results_df = results.get_dataframe()
-
-ray_results_df.to_csv(
-    RAY_RESULTS_DIR / "all_ray_trials.csv",
-    index=False,
-)
 
 with open(
     RAY_RESULTS_DIR / "best_hyperparameters.txt",
@@ -653,5 +557,90 @@ test_results = final_trainer.test(
 
 print("\nFinal test results:")
 print(test_results)
+
+
+
+# ============================================================
+# PARITY PLOT FOR THE TEST SET
+# ============================================================
+
+# Generate predictions using the best saved model
+prediction_batches = final_trainer.predict(
+    best_final_model,
+    dataloaders=final_test_loader,
+)
+
+# Combine predictions from all batches
+y_pred = torch.cat(
+    [
+        batch.detach().cpu()
+        if isinstance(batch, torch.Tensor)
+        else torch.as_tensor(batch)
+        for batch in prediction_batches
+    ],
+    dim=0,
+).numpy().reshape(-1)
+
+# Get the original, unscaled measured values
+y_true = np.asarray(
+    [datapoint.y for datapoint in test_data[0]]
+).reshape(-1)
+
+# Calculate performance metrics
+mae = mean_absolute_error(y_true, y_pred)
+r2 = r2_score(y_true, y_pred)
+
+# Use the same limits for both axes
+lower_limit = min(y_true.min(), y_pred.min())
+upper_limit = max(y_true.max(), y_pred.max())
+
+padding = 0.05 * (upper_limit - lower_limit)
+
+lower_limit -= padding
+upper_limit += padding
+
+# Create parity plot
+fig, ax = plt.subplots(figsize=(6, 6))
+
+ax.scatter(
+    y_true,
+    y_pred,
+    edgecolors="black",
+    linewidths=0.4)
+
+ax.plot(
+    [lower_limit, upper_limit],
+    [lower_limit, upper_limit],
+    linestyle="--")
+
+ax.text(
+    0.05,
+    0.95,
+    f"MAE = {mae:.2f}\n$R^2$ = {r2:.2f}",
+    transform=ax.transAxes,
+    ha="left",
+    va="top",
+    fontsize=11,
+    bbox={
+        "boxstyle": "round",
+        "facecolor": "white",
+        "alpha": 0.85,
+    },
+)
+
+ax.set_xlabel("Measured rejection")
+ax.set_ylabel("Predicted rejection")
+
+ax.set_xlim(lower_limit, upper_limit)
+ax.set_ylim(lower_limit, upper_limit)
+ax.set_aspect("equal", adjustable="box")
+
+ax.legend()
+plt.tight_layout()
+
+plt.savefig(
+    "test_parity_plot_hyperparameter_optimization.svg",
+    format = "svg",
+    bbox_inches="tight")
 
 ray.shutdown()
